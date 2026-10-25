@@ -1,0 +1,97 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Environment variables / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Datasets
+# Не загружать датасет в Git
+# =========================
+data/raw/*
+!data/raw/.gitkeep
+
+data/interim/*
+!data/interim/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep
+
+# =========================
+# Trained models
+# =========================
+models/*
+!models/.gitkeep
+
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.cbm
+
+# =========================
+# Experiment tracking
+# =========================
+mlruns/
+mlartifacts/
+mlflow.db
+mlflow.db-*
+*.sqlite
+*.sqlite3
+optuna.db
+
+# =========================
+# Logs
+# =========================
+logs/*
+!logs/.gitkeep
+*.log
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# =========================
+# Testing / linting / coverage
+# =========================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# =========================
+# IDE
+# =========================
+.idea/
+.vscode/
+
+# =========================
+# OS / temporary files
+# =========================
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
