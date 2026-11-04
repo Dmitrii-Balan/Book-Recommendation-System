@@ -29,12 +29,8 @@ def _long_format(name: str, users: np.ndarray, items: np.ndarray, scores: np.nda
     return frame[frame[ITEM_IDX_COL] != PAD_ITEM]
 
 
-def merge_candidates(
-    users,
-    recommendations: dict[str, tuple[np.ndarray, np.ndarray]],
-    max_per_user: int | None = None,
-    rrf_k: int = 60,
-) -> pd.DataFrame:
+def merge_candidates(users, recommendations: dict[str, tuple[np.ndarray, np.ndarray]],
+                     max_per_user: int | None = None, rrf_k: int = 100) -> pd.DataFrame:
     """
     users — индексы пользователей (строки массивов recommendations);
     recommendations — {имя генератора: (items, scores)} из CandidateGenerator.recommend.

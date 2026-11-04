@@ -11,6 +11,14 @@ def _split_commas(text: str) -> list[str]:
     return [part.strip().lower() for part in text.split(",") if part.strip()]
 
 
+def _year_to_decade(value: str) -> str:
+    """'1886.0' -> 'decade_1880'; пропуск или мусор -> '' (нулевой блок)."""
+    try:
+        return f"decade_{int(float(value)) // 10 * 10}"
+    except (ValueError, OverflowError):
+        return ""
+
+
 class ContentCandidates(CandidateGenerator):
     """
     Content-based: профиль пользователя — взвешенная сумма векторов его книг,
@@ -35,6 +43,7 @@ class ContentCandidates(CandidateGenerator):
             "title": TfidfVectorizer(sublinear_tf=True, token_pattern=r"(?u)\b\w\w+\b"),
             "genres": TfidfVectorizer(tokenizer=_split_commas, token_pattern=None, lowercase=False),
             "authors": TfidfVectorizer(tokenizer=_split_commas, token_pattern=None, lowercase=False),
+            "year": TfidfVectorizer(preprocessor=_year_to_decade, token_pattern=r"\S+")
         }
 
     def _fit(self, matrix, catalog) -> None:
