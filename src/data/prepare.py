@@ -95,9 +95,12 @@ def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | 
                  items: pd.DataFrame | None = None) -> PreparedData:
     """Если interactions/items не переданы, они читаются из cfg.raw_dir."""
     cfg = cfg or DataConfig()
+
     if interactions is None or items is None:
+
         loaded_inter = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file)
         loaded_items = load_items(Path(cfg.raw_dir) / cfg.items_file)
+
         interactions = loaded_inter if interactions is None else interactions
         items = loaded_items if items is None else items
 
@@ -106,6 +109,7 @@ def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | 
     # 1-3: до сплита
     data = clear_deduplicate_interactions(interactions)
     report["rows_deduplicated"] = int(len(data))
+
     data = filter_positive(data, cfg.min_rating, cfg.min_progress, cfg.drop_below_rating)
     report["rows_positive"] = int(len(data))
     data = filter_users(data, cfg.min_user_items)

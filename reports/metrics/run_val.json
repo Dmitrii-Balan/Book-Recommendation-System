@@ -1,0 +1,81 @@
+{
+  "args": {
+    "part": "val",
+    "generators": null,
+    "ks": [
+      10,
+      50,
+      100,
+      200
+    ],
+    "pool_sizes": [
+      100,
+      200,
+      300,
+      500
+    ],
+    "rrf_k": 100,
+    "ablation": false,
+    "save_pool": false,
+    "max_users": null,
+    "seed": 42,
+    "out_dir": "D:\\ml_materials\\Book-Recommendation-System\\reports\\metrics",
+    "interim_dir": "D:\\ml_materials\\Book-Recommendation-System\\data\\interim",
+    "raw_dir": "D:\\ml_materials\\Book-Recommendation-System\\data\\raw",
+    "interactions_file": "interactions.csv",
+    "items_file": "items.csv",
+    "scheme": "global_time",
+    "val_size": 0.1,
+    "test_size": 0.1,
+    "min_rating": 4.0,
+    "min_progress": 70,
+    "min_user_items": 10,
+    "min_item_users": 20,
+    "min_train_items": 3
+  },
+  "data_report": {
+    "config": {
+      "raw_dir": "D:\\ml_materials\\Book-Recommendation-System\\data\\raw",
+      "interactions_file": "interactions.csv",
+      "items_file": "items.csv",
+      "min_rating": 4.0,
+      "min_progress": 70,
+      "drop_below_rating": 1.5,
+      "min_user_items": 10,
+      "min_item_users": 20,
+      "min_train_items": 3,
+      "scheme": "global_time",
+      "val_size": 0.1,
+      "test_size": 0.1
+    },
+    "rows_raw": 1533078,
+    "rows_deduplicated": 1532998,
+    "rows_positive": 643511,
+    "rows_after_user_filter": 259052,
+    "split": {
+      "scheme": "global_time",
+      "val_start": "2019-09-09T00:00:00",
+      "test_start": "2019-11-05T00:00:00",
+      "real_fracs": {
+        "train": 0.7996695644117783,
+        "val": 0.10003010978490805,
+        "test": 0.10030032580331362
+      }
+    },
+    "rows": {
+      "train": 117430,
+      "val": 7599,
+      "test": 4604
+    },
+    "dropped_by_catalog": {
+      "val": 18314,
+      "test": 21379
+    },
+    "n_users": 5239,
+    "n_items": 2460,
+    "train_density": 0.00911161907954258
+  },
+  "eval_users": 1526,
+  "relevant_pairs": 7599,
+  "union_recall": 0.8272141071193578
+}
