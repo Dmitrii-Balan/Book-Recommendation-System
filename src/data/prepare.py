@@ -91,18 +91,14 @@ class PreparedData:
         return cls(splits, Catalog.load(src / "catalog"), report)
 
 
-def prepare_data(
-    cfg: DataConfig | None = None,
-    *,
-    interactions: pd.DataFrame | None = None,
-    items: pd.DataFrame | None = None,
-) -> PreparedData:
+def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | None = None,
+                 items: pd.DataFrame | None = None) -> PreparedData:
     """Если interactions/items не переданы, они читаются из cfg.raw_dir."""
     cfg = cfg or DataConfig()
     if interactions is None or items is None:
-        loaded_inter = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file / cfg.items_file)
-        loaded_items = load_items(Path(cfg.raw_dir) / cfg.interactions_file / cfg.items_file)
-        interactions = loaded_items if interactions is None else interactions
+        loaded_inter = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file)
+        loaded_items = load_items(Path(cfg.raw_dir) / cfg.items_file)
+        interactions = loaded_inter if interactions is None else interactions
         items = loaded_items if items is None else items
 
     report: dict = {"config": asdict(cfg), "rows_raw": int(len(interactions))}
@@ -116,7 +112,7 @@ def prepare_data(
     report["rows_after_user_filter"] = int(len(data))
 
     # 4: сплит
-    split_kwargs = {"val_frac": cfg.val_size, "test_frac": cfg.test_size}
+    split_kwargs = {"val_size": cfg.val_size, "test_size": cfg.test_size}
     raw_splits = make_splits(data, cfg.scheme, **split_kwargs)
 
     # 5-6: каталог по train

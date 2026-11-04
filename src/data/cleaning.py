@@ -32,12 +32,8 @@ def clear_deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
     return out[list(df.columns)]
 
 
-def filter_positive(
-    df: pd.DataFrame,
-    min_rating: float = 4.0,
-    min_progress: float = 70,
-    drop_below_rating: float | None = 1.5,
-) -> pd.DataFrame:
+def filter_positive(df: pd.DataFrame, min_rating: float = 4.0,
+                    min_progress: float = 70, drop_below_rating: float | None = 1.5) -> pd.DataFrame:
     """
     Оставляет «положительные» взаимодействия: rating >= min_rating ИЛИ progress >= min_progress.
 
@@ -66,12 +62,8 @@ def filter_items(df: pd.DataFrame, min_users: int) -> pd.DataFrame:
     return df[df[ITEM_COL].isin(keep)].copy()
 
 
-def iterative_core_filter(
-    df: pd.DataFrame,
-    min_item_users: int = 20,
-    min_user_items: int = 10,
-    max_iter: int = 100,
-) -> pd.DataFrame:
+def iterative_core_filter(df: pd.DataFrame, min_item_users: int = 20,
+                          min_user_items: int = 10, max_iter: int = 100) -> pd.DataFrame:
     """
     k-core: повторяет filter_items/filter_users, пока набор строк не перестанет меняться.
 
