@@ -16,15 +16,14 @@ logger = logging.getLogger(__name__)
 
 def clear_deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Одна строка на пару (user, item).
-
+    Дубликаты по (user, item) обрабатываются:
     start_date — самая ранняя, progress — максимальный, rating — средний.
     После этого пара (user, item) встречается ровно один раз, поэтому
     «утечка по паре» между train/val/test невозможна по построению.
     """
     if not df.duplicated([USER_COL, ITEM_COL]).any():
         return df.copy()
-
+    # Агрегируем и обраатываем дубликаты
     out = df.groupby([USER_COL, ITEM_COL], as_index=False, sort=False).agg(
         {PROGRESS_COL: "max", RATING_COL: "mean", DATE_COL: "min"}
     )

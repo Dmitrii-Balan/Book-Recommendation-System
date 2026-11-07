@@ -37,14 +37,14 @@ def load_interactions(path: str | Path) -> pd.DataFrame:
     """
     raw = pd.read_csv(path)
     _require_columns(raw, INTERACTION_COLUMNS, "interactions")
-
+    # Приводим время и прогресс к нужным типам
     df = raw[INTERACTION_COLUMNS].copy()
     df[DATE_COL] = pd.to_datetime(df[DATE_COL], errors="coerce")
     df[PROGRESS_COL] = pd.to_numeric(df[PROGRESS_COL], errors="coerce").fillna(0).clip(0, 100)
-
+    # Приводим рейтинг к числу и обрабатываем выбросы 
     rating = pd.to_numeric(df[RATING_COL], errors="coerce")
     df[RATING_COL] = rating.where(rating.between(1, 5))
-
+    # Удаляем пустые значения 
     n_before = len(df)
     df = df.dropna(subset=[USER_COL, ITEM_COL, DATE_COL])
     df = df.astype({USER_COL: "int64", ITEM_COL: "int64"})
@@ -69,9 +69,10 @@ def load_items(path: str | Path) -> pd.DataFrame:
     if ITEM_COL not in raw.columns and "id" in raw.columns:
         raw = raw.rename(columns={"id": ITEM_COL})
     _require_columns(raw, ITEM_COLUMNS, "items")
-
+    # Удаляем книги, у которых нет индекса
     items = raw.dropna(subset=[ITEM_COL]).drop_duplicates(ITEM_COL, keep="first").copy()
     items[ITEM_COL] = items[ITEM_COL].astype("int64")
+    # Обрабатываем пропуски в колонках
     for col in TEXT_COLUMNS:
         items[col] = items[col].fillna("").astype(str)
     items[YEAR_COL] = pd.to_numeric(items[YEAR_COL], errors="coerce")

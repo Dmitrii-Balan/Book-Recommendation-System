@@ -14,37 +14,40 @@ DEFAULT_KS = (10, 50, 100, 200)
 
 
 def hit_matrix(items: np.ndarray, target: csr_matrix, users: np.ndarray) -> np.ndarray:
-    """bool (n_users, K): угадана ли книга на позиции r у пользователя users[u]."""
+    """
+    Строит бинарную матрицу попаданий:
+    bool (n_users, K): угадана ли книга на позиции r у пользователя users[u].
+    """
+    # n - количество юзеров, k - количество рекоммендаций
     n, k = items.shape
     valid = items != PAD_ITEM
+    # Повторяем индекс пользователя столько раз, сколько для него рекоммендаций
     rows = np.repeat(np.asarray(users), k)
+    # Невалидные рекоммендации заполняем 0
     cols = np.where(valid, items, 0).ravel()
+    # Смотрим есть ли эти рекоммендации среди валидных книг
     found = np.asarray(target[rows, cols]).reshape(n, k) > 0
     return found & valid
 
 
-def ranking_metrics(
-    items: np.ndarray,
-    target: csr_matrix,
-    users: np.ndarray,
-    ks=(10,),
-    n_items: int | None = None,
-) -> dict[str, float]:
+def ranking_metrics(items: np.ndarray, target: csr_matrix, users: np.ndarray,
+                     ks=(10,), n_items: int | None = None) -> dict[str, float]:
     """
     Усреднённые по пользователям Precision/Recall/HitRate/NDCG/MAP @K.
 
     items — (len(users), K_max) рекомендации, target — бинарная матрица релевантных книг.
     Пользователи без релевантных книг пропускаются. AP@K нормируется на min(K, число релевантных).
     """
+    # Оставляем только тех пользователей, для которых есть информация в target
     users = np.asarray(users)
     n_relevant = np.diff(target.tocsr().indptr)[users]
     keep = n_relevant > 0
     users, items, n_relevant = users[keep], items[keep], n_relevant[keep]
-
+    # Строим матрицу попаданий
     hits = hit_matrix(items, target, users)
     discount = 1.0 / np.log2(np.arange(2, items.shape[1] + 2))
     ideal_dcg = np.cumsum(discount)
-
+    # Считаем метрики
     metrics: dict[str, float] = {"n_users": float(len(users))}
     for k in ks:
         h = hits[:, :k]
@@ -64,12 +67,8 @@ def ranking_metrics(
     return metrics
 
 
-def evaluate_generator(
-    generator: CandidateGenerator,
-    target: csr_matrix,
-    ks=DEFAULT_KS,
-    users: np.ndarray | None = None,
-) -> dict[str, float]:
+def evaluate_generator(generator: CandidateGenerator, target: csr_matrix,
+                        ks=DEFAULT_KS, users: np.ndarray | None = None) -> dict[str, float]:
     """Рекомендации генератора для пользователей с непустым target и метрики по ним."""
     target = target.tocsr()
     if users is None:

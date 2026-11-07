@@ -1,7 +1,7 @@
 """
 Прогон первого уровня: данные -> генераторы кандидатов -> пул кандидатов -> Recall по моделям.
 
-Запуск из корня репозитория (data/raw/interactions.csv и data/raw/items.csv на месте):
+Запуск из корня репозитория:
 
     python scripts/run_first_level.py                              # val, все генераторы
     python scripts/run_first_level.py --generators als slim item_knn --ablation
@@ -14,7 +14,7 @@
     ablation_<part>.csv      (с --ablation) Recall пула без каждого из генераторов
     run_<part>.json          параметры запуска и отчёт о данных
 
-Два вида Recall (не путать):
+Два вида Recall:
     macro — Recall@K из ranking_metrics: доля релевантных книг пользователя в его топ-K,
             усреднённая по пользователям;
     micro — доля релевантных пар (пользователь, книга) среди всех пар цели; именно её
@@ -29,7 +29,6 @@ import argparse
 import json
 import logging
 import sys
-import time 
 from pathlib import Path 
 
 import numpy as np  
@@ -70,8 +69,6 @@ def parse_args() -> argparse.Namespace:
                    help="пересчитать Recall пула без каждого из генераторов по очереди")
     p.add_argument("--save-pool", action="store_true",
                    help="сохранить полный пул кандидатов с колонкой label (для обучения ранкера)")
-    p.add_argument("--max-users", type=int, default=None,
-                   help="оценивать только случайную подвыборку пользователей (быстрая отладка)")
     p.add_argument("--seed", type=int, default=42, help="seed для --max-users")
     p.add_argument("--out-dir", default=str(ROOT / "reports" / "metrics"))
     p.add_argument("--interim-dir", default=str(ROOT / "data" / "interim"),
@@ -95,28 +92,33 @@ def parse_args() -> argparse.Namespace:
     args.pool_sizes = sorted(set(args.pool_sizes))
     return args
 
-
 # --------------------------------------------------------------------------- метрики
 
 def relevant_keys(target, users: np.ndarray, n_items: int) -> np.ndarray:
-    """Релевантные пары users × книги, закодированные одним числом user * n_items + item."""
-    sub = target[users].tocoo()
+    """
+    Создаёт массив закодированных релевантных пар users × книги.
+    Кодируем формулой user_idx * n_items + item_idx.
+    """
+    sub = target[users].tocoo() # Coordinate format
     return users[sub.row].astype(np.int64) * n_items + sub.col.astype(np.int64)
-
 
 def pool_scores(pool: pd.DataFrame, rel_keys: np.ndarray, users: np.ndarray,
                 n_relevant: np.ndarray, n_users_total: int, n_items: int) -> dict:
-    """Recall пула: micro (по парам) и macro (среднее по пользователям), размер пула."""
+    """
+    pool - пары рекоммендаций (user, item)
+    pool_recall: micro (по парам) и macro (среднее по пользователям)
+    """
     pool_users = pool[USER_IDX_COL].to_numpy(dtype=np.int64)
+    # Кодируем чтобы сравнивать пары взаимодействий (user_id, item_id)
     keys = pool_users * n_items + pool[ITEM_IDX_COL].to_numpy(dtype=np.int64)
     found = np.isin(keys, rel_keys)
+    # Считаем повторения успешных рекоммендаций по пользователям
     per_user = np.bincount(pool_users[found], minlength=n_users_total)[users]
     return {
         "pool_recall": float(found.sum() / n_relevant.sum()),
         "pool_recall_macro": float(np.mean(per_user / n_relevant)),
         "avg_pool_size": len(pool) / len(users),
     }
-
 
 def pool_table(pool: pd.DataFrame, sizes: list[int], **kw) -> pd.DataFrame:
     """Recall пула при разных max_per_user. pool уже отсортирован по RRF внутри пользователя."""
@@ -126,11 +128,9 @@ def pool_table(pool: pd.DataFrame, sizes: list[int], **kw) -> pd.DataFrame:
         rows.append({"max_per_user": "all" if size is None else size, **pool_scores(sub, **kw)})
     return pd.DataFrame(rows)
 
-
 def show(title: str, df: pd.DataFrame) -> None:
     print(f"\n=== {title} ===")
     print(df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-
 
 # --------------------------------------------------------------------------- основной прогон
 
@@ -149,89 +149,90 @@ def main() -> None:
         min_train_items=args.min_train_items,
         scheme=args.scheme, val_size=args.val_size, test_size=args.test_size,
     )
+    # Загружаем, фильтруем и разбиваем  
     log.info("Готовлю данные из %s", cfg.raw_dir)
     data = prepare_data(cfg)
     splits, catalog = data.splits, data.catalog
-    n_items = catalog.n_items
+    items_len = catalog.items_len
     print("\n=== Разбиение ===")
     print(splits.summary().to_string(index=False))
     log.info("Каталог: %d пользователей, %d книг, плотность train %.5f",
-             catalog.n_users, n_items, data.report["train_density"])
+             catalog.users_len, items_len, data.report["train_density"])
 
-    # === 2. История, цель и построение матрицы взаимодействий ===
-    history = splits.history(part)
-    target = build_interaction_matrix(splits.target(part), catalog, weighting="progress_rating")
+    # === 2. История, цель и построение матрицы взаимодействий === 
+    history = splits.history(part) # val/test 
+    target = build_interaction_matrix(splits.target(part), catalog, weighting="binary")
+    # Оставляем только тех пользователей, о которых есть информация в target
     users = np.flatnonzero(np.diff(target.indptr) > 0)
     if len(users) == 0:
         raise SystemExit(f"В target({part!r}) нет ни одного пользователя из каталога")
-    if args.max_users is not None and args.max_users < len(users):
-        rng = np.random.default_rng(args.seed)
-        users = np.sort(rng.choice(users, size=args.max_users, replace=False))
+    # Считаем количество релевантных книг по пользователям
     n_relevant = np.diff(target.indptr)[users]
     total_relevant = int(n_relevant.sum())
-    rel_keys = relevant_keys(target, users, n_items)
+    rel_keys = relevant_keys(target, users, items_len)
     log.info("Оценка на %s: %d пользователей, %d релевантных пар; история — %d строк",
              part, len(users), total_relevant, len(history))
 
     # === 3. Генераторы: fit -> recommend -> метрики ===
+    # Создаём генераторы кандидатов
     generators = build_generators(args.generators)
+    # Строим для них матрицы взаимодействий 
     matrices: dict[str, object] = {}
     for _, weighting in generators.values():
         if weighting not in matrices:
             matrices[weighting] = build_interaction_matrix(history, catalog, weighting=weighting)
-
+    # Обучем генеравторы и получаем рекоммендации 
     recs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     hit_keys: dict[str, np.ndarray] = {}
     rows = []
     for i, (name, (gen, weighting)) in enumerate(generators.items(), start=1):
         log.info("[%d/%d] %s (матрица: %s) — обучение", i, len(generators), name, weighting)
-        t0 = time.perf_counter()
         gen.fit(matrices[weighting], catalog)
-        fit_s = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
+        # Получаем рекоммендуемые книги и их порядок
         items, scores = gen.recommend(users, k=k_max)
-        rec_s = time.perf_counter() - t0
         recs[name] = (items, scores)
-
-        metrics = ranking_metrics(items, target, users, ks=tuple(ks), n_items=n_items)
+        # Получаем оценки рекоммендаций 
+        metrics = ranking_metrics(items, target, users, ks=tuple(ks), n_items=items_len)
         hits = hit_matrix(items, target, users)
         u_pos, r_pos = np.nonzero(hits)
-        keys = users[u_pos].astype(np.int64) * n_items + items[u_pos, r_pos].astype(np.int64)
+        # Кодируем рекоммендуемые книги
+        keys = users[u_pos].astype(np.int64) * items_len + items[u_pos, r_pos].astype(np.int64)
         hit_keys[name] = np.unique(keys)
 
         valid = items != PAD_ITEM
         rows.append({
             "model": name,
-            "fit_s": fit_s,
-            "rec_s": rec_s,
             "avg_cands": float(valid.sum(axis=1).mean()),
             "no_cands_share": float((valid.sum(axis=1) == 0).mean()),
             **{k: v for k, v in metrics.items() if k != "n_users"},
         })
-        log.info("    Recall@%d = %.4f, готово за %.1f с", k_max, metrics[f"Recall@{k_max}"],
-                 fit_s + rec_s)
+        log.info("    Recall@%d = %.4f", k_max, metrics[f"Recall@{k_max}"])
 
     # === 4. Микро-Recall каждой модели и вклад, которого нет у остальных === 
+    # Объединяем предсказания всех моделей 
     union = np.unique(np.concatenate(list(hit_keys.values())))
+    # Проходимся по каждой модели и считаем её вклад в общий пул
     for row in rows:
         mine = hit_keys[row["model"]]
+        # Предсказания других моделей 
         others = [v for name, v in hit_keys.items() if name != row["model"]]
         rest = np.unique(np.concatenate(others)) if others else np.empty(0, dtype=np.int64)
+        # Метрика модели и её отдельный вклад в общую метрику  
         row[f"PairRecall@{k_max}"] = len(mine) / total_relevant
         row[f"UniqueRecall@{k_max}"] = len(np.setdiff1d(mine, rest, assume_unique=True)) / total_relevant
+    # Recall по предсказаниям всех моделей
     union_recall = len(union) / total_relevant
-
+    # Выводим расчитанные метрики
     models = pd.DataFrame(rows).sort_values(f"Recall@{k_max}", ascending=False).reset_index(drop=True)
-    shown = (["model", "fit_s", "avg_cands"] + [f"Recall@{k}" for k in ks]
+    shown = (["model", "avg_cands"] + [f"Recall@{k}" for k in ks]
              + [f"NDCG@{ks[0]}", f"Coverage@{k_max}", f"PairRecall@{k_max}", f"UniqueRecall@{k_max}"])
     show(f"Модели ({part}), топ-{k_max} на пользователя", models[shown])
 
-    # === 5. Пул кандидатов ===
+    # === 5. Подготовка пула кандидатов для второго уровня ===
     log.info("Собираю пул кандидатов (RRF, rrf_k=%d)", args.rrf_k)
     pool = merge_candidates(users, recs, rrf_k=args.rrf_k)
     pool_kw = dict(rel_keys=rel_keys, users=users, n_relevant=n_relevant,
-                   n_users_total=target.shape[0], n_items=n_items)
+                   n_users_total=target.shape[0], n_items=items_len)
     pools = pool_table(pool, args.pool_sizes, **pool_kw)
     show(f"Пул: Recall при разном max_per_user ({part})", pools)
 
@@ -277,7 +278,7 @@ def main() -> None:
     log.info("Таблицы сохранены в %s", out)
 
     if args.save_pool:
-        keys = (pool[USER_IDX_COL].to_numpy(dtype=np.int64) * n_items
+        keys = (pool[USER_IDX_COL].to_numpy(dtype=np.int64) * items_len
                 + pool[ITEM_IDX_COL].to_numpy(dtype=np.int64))
         labeled = pool.assign(label=np.isin(keys, rel_keys).astype(np.int8))
         interim = Path(args.interim_dir)

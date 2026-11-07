@@ -4,9 +4,6 @@ Catalog — единый словарь пользователей и книг �
 Каталог строится только по train. Все генераторы кандидатов и метрики работают
 с индексами 0..N-1 из этого каталога, поэтому модель физически не может
 порекомендовать книгу, которой нет в каталоге оценки.
-
-Индексы детерминированы: id сортируются, значит один и тот же train даёт
-одну и ту же нумерацию при каждом запуске.
 """
 import logging
 from dataclasses import dataclass
@@ -21,76 +18,81 @@ logger = logging.getLogger(__name__)
 
 
 class IdMap:
-    """Двунаправленное отображение «исходный id <-> индекс 0..N-1»."""
+    """Двунаправленное отображение «исходный id <-> индекс 0..N-1»"""
 
     def __init__(self, ids):
         self.ids = np.asarray(pd.unique(ids))
         self._index = pd.Index(self.ids)
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.ids)
 
-    def __contains__(self, item) -> bool:
-        return item in self._index
-
     def encode(self, ids) -> np.ndarray:
-        """id -> индекс; для неизвестных id возвращает -1."""
+        """id -> индекс; для неизвестных id возвращает -1"""
         return self._index.get_indexer(np.asarray(ids))
 
     def decode(self, idx) -> np.ndarray:
-        """индекс -> id."""
+        """индекс -> id"""
         return self.ids[np.asarray(idx)]
 
 
 @dataclass
 class Catalog:
+    """Строим единую нумерацию книг и пользователей"""
     users: IdMap
     items: IdMap
-    meta: pd.DataFrame  # строка i описывает книгу с индексом i (item_id, title, ..., n_readers)
+    meta: pd.DataFrame  # строка i описывает книгу с индексом i (item_id, title, ...)
 
     @classmethod
     def from_train(cls, train: pd.DataFrame, items_meta: pd.DataFrame) -> "Catalog":
         """
         Альтернативный конструктор класса Catalog. 
-
         train - взаимодействия пользователей с книгами
         items_meta - информация о каждой книге
         """
+        # Находим все уникальные киги и пользователей
         user_ids = np.sort(train[USER_COL].unique())
         item_ids = np.sort(train[ITEM_COL].unique())
-
-        # Оставляем только книги, которые есть в train
+        # Удаляем информацию о книгах, для которых нет взаимодействий 
         meta = pd.DataFrame({ITEM_COL: item_ids}).merge(
             items_meta.drop_duplicates(ITEM_COL), on=ITEM_COL, how="left"
         )
+        # Проверяем о скольки книгах у нас отсутствует информация в meta
         if "title" in meta.columns:
             n_missing = int(meta["title"].isna().sum())
             if n_missing:
                 logger.warning("Книг из train без метаданных в items.csv: %d", n_missing)
+        # Обрабатываем пропуски
         for col in TEXT_COLUMNS:
             if col in meta.columns:
                 meta[col] = meta[col].fillna("")
-
+        # Считаем количество читателей книг
         readers = train.groupby(ITEM_COL)[USER_COL].nunique()
         meta["n_readers"] = meta[ITEM_COL].map(readers).astype("int64")
-
+        # Возвращаем готовый Catalog 
         return cls(IdMap(user_ids), IdMap(item_ids), meta)
 
     @property
-    def n_users(self) -> int:
+    def users_len(self):
         return len(self.users)
-
+    
     @property
-    def n_items(self) -> int:
+    def items_len(self):
         return len(self.items)
 
     def filter_known(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Оставляет строки, где и пользователь, и книга есть в каталоге."""
+        """Оставляет взаимодействия, где и пользователь, и книга есть в каталоге."""
         known = df[USER_COL].isin(self.users._index) & df[ITEM_COL].isin(self.items._index)
         return df[known].reset_index(drop=True)
 
     def encode(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Добавляет user_idx и item_idx; строки с неизвестными id удаляются."""
+        """
+        Переводит user_id и item_id в сжатые индексы.
+
+        Возвращает копию df с новыми столбцами user_idx и item_idx (исходные
+        user_id и item_id сохраняются). Строки, где пользователь или книга
+        отсутствуют в каталоге, удаляются.
+        """
         out = df.copy()
         out[USER_IDX_COL] = self.users.encode(out[USER_COL])
         out[ITEM_IDX_COL] = self.items.encode(out[ITEM_COL])

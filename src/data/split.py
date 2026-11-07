@@ -53,7 +53,7 @@ class Splits:
         if part not in ("val", "test"):
             raise ValueError("target() определена только для 'val' и 'test'")
         frame = self.val if part == "val" else self.test
-        return drop_seen(frame, self.history(part))
+        return _drop_seen(frame, self.history(part))
 
     def summary(self) -> pd.DataFrame:
         """
@@ -74,17 +74,14 @@ class Splits:
             )
         return pd.DataFrame(rows)
 
-
-def drop_seen(target: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
+def _drop_seen(target: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     """Убирает из target пары (user, item), которые уже есть в history."""
     seen = history[[USER_COL, ITEM_COL]].drop_duplicates().assign(_seen=True)
     merged = target.merge(seen, how="left", on=[USER_COL, ITEM_COL])
     return merged[merged["_seen"].isna()].drop(columns="_seen").reset_index(drop=True)
 
-
 def _sorted(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     return df.sort_values(keys, kind="stable").reset_index(drop=True)
-
 
 def split_global_time(df: pd.DataFrame, val_size: float = 0.1, test_size: float = 0.1) -> Splits:
     """Общая дата отсечки"""

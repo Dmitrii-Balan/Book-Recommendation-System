@@ -36,19 +36,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DataConfig:
-    # файлы
+    # Файлы
     raw_dir: str = "data/raw"
     interactions_file: str = "interactions.csv"
     items_file: str = "items.csv"
-    # что считать положительным взаимодействием
+    # Что считать положительным взаимодействием
     min_rating: float = 4.0
-    min_progress: float = 70
+    min_progress: float = 80
     drop_below_rating: float | None = 1.5
-    # фильтры
+    # Фильтры
     min_user_items: int = 10     # до сплита
     min_item_users: int = 20     # только по train
     min_train_items: int = 3     # минимум книг у пользователя в train
-    # сплит
+    # Сплит
     scheme: str = "global_time"  # или "per_user"
     val_size: float = 0.1
     test_size: float = 0.1
@@ -93,9 +93,16 @@ class PreparedData:
 
 def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | None = None,
                  items: pd.DataFrame | None = None) -> PreparedData:
-    """Если interactions/items не переданы, они читаются из cfg.raw_dir."""
+    """
+    Основная подготовка данных:
+    - загрузка, удаление пропусков и простая предобработка 
+    - удаление повторных взаимодействий 
+    - разбиение по времени
+    - создаём Catalog и удаляем книг и пользователей из val/test, которых уже нет в train
+    """
+    # Если interactions/items не переданы, они читаются из cfg.raw_dir
     cfg = cfg or DataConfig()
-
+    # Загрузка данных, если не были переданы 
     if interactions is None or items is None:
 
         loaded_inter = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file)
@@ -104,28 +111,29 @@ def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | 
         interactions = loaded_inter if interactions is None else interactions
         items = loaded_items if items is None else items
 
-    report: dict = {"config": asdict(cfg), "rows_raw": int(len(interactions))}
+    report = {"config": asdict(cfg), "rows_raw": int(len(interactions))}
 
-    # 1-3: до сплита
+    # Удаление дубликатов и отрицательных взаимодействий 
     data = clear_deduplicate_interactions(interactions)
     report["rows_deduplicated"] = int(len(data))
-
     data = filter_positive(data, cfg.min_rating, cfg.min_progress, cfg.drop_below_rating)
     report["rows_positive"] = int(len(data))
+
+    # Удаляем пользователей, у который мало прочитанных книг
     data = filter_users(data, cfg.min_user_items)
     report["rows_after_user_filter"] = int(len(data))
 
-    # 4: сплит
+    # Разбиение по времени 
     split_kwargs = {"val_size": cfg.val_size, "test_size": cfg.test_size}
     raw_splits = make_splits(data, cfg.scheme, **split_kwargs)
 
-    # 5-6: каталог по train
+    # Удаляем книги и пользователей, о которых мало информации 
     train = iterative_core_filter(raw_splits.train, cfg.min_item_users, cfg.min_train_items)
     if train.empty:
         raise ValueError("После фильтров train пуст: ослабьте min_item_users / min_train_items")
     catalog = Catalog.from_train(train, items)
 
-    # 7: val/test только в пределах каталога
+    # Оставляем val/test только в пределах каталога, построенного на train
     val = catalog.filter_known(raw_splits.val)
     test = catalog.filter_known(raw_splits.test)
 
@@ -137,10 +145,10 @@ def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | 
         "val": int(len(raw_splits.val) - len(val)),
         "test": int(len(raw_splits.test) - len(test)),
     }
-    report["n_users"] = catalog.n_users
-    report["n_items"] = catalog.n_items
-    report["train_density"] = len(train) / (catalog.n_users * catalog.n_items)
+    report["n_users"] = catalog.users_len
+    report["n_items"] = catalog.items_len
+    report["train_density"] = len(train) / (catalog.users_len * catalog.items_len)
 
     logger.info("Готово: %d пользователей, %d книг, train/val/test = %d/%d/%d",
-                catalog.n_users, catalog.n_items, len(train), len(val), len(test))
+                catalog.users_len, catalog.items_len, len(train), len(val), len(test))
     return PreparedData(splits, catalog, report)

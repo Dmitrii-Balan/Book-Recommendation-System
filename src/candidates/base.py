@@ -11,11 +11,6 @@
     её строит src.data.matrices.build_interaction_matrix;
   * по умолчанию не рекомендуют книги, которые уже есть в матрице, на которой они учились.
     Поэтому перед тестом генераторы дообучают на train+val.
-
-Использование:
-    gen = ItemKNNCandidates().fit(train_matrix, catalog)
-    items, scores = gen.recommend(user_idx, k=200)   # обе матрицы (n_users, k)
-    # если кандидатов меньше k, хвост заполнен PAD_ITEM = -1
 """
 from abc import ABC, abstractmethod
 

@@ -19,7 +19,7 @@ def build_generators(names: list[str] | None = None) -> dict[str, tuple[Candidat
         "item_knn": (ItemKNNCandidates(k_neighbors=100), "binary"),
         "item_knn_bm25": (ItemKNNCandidates(k_neighbors=100, bm25=True), "binary"),
         "user_knn": (UserKNNCandidates(k_neighbors=50), "binary"),
-        "slim": (SLIMCandidates(alpha=1e-3, l1_ratio=0.5, max_neighbors=200, n_jobs=2), "binary"),
+        "slim": (SLIMCandidates(alpha=1e-3, l1_ratio=0.5, max_neighbors=200, n_jobs=2), "progress_rating"),
         "als": (ALSCandidates(factors=100, regularization=0.05, alpha=10, iterations=70), "progress_rating"),
         "content": (ContentCandidates(), "progress_rating"),
     }
