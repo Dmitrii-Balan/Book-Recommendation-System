@@ -160,7 +160,7 @@ def main() -> None:
              catalog.users_len, items_len, data.report["train_density"])
 
     # === 2. История, цель и построение матрицы взаимодействий === 
-    history = splits.history(part) # val/test 
+    history = splits.history(part) # part = val/test 
     target = build_interaction_matrix(splits.target(part), catalog, weighting="binary")
     # Оставляем только тех пользователей, о которых есть информация в target
     users = np.flatnonzero(np.diff(target.indptr) > 0)
