@@ -19,12 +19,14 @@ N_SOURCES_COL = "n_sources"
 
 
 def _long_format(name: str, users: np.ndarray, items: np.ndarray, scores: np.ndarray) -> pd.DataFrame:
+    # Получаем размеры матриц рекомендаций 
     n, k = items.shape
+    # Создаём датафрейм пар рекомендаций 
     frame = pd.DataFrame({
         USER_IDX_COL: np.repeat(users, k),
         ITEM_IDX_COL: items.ravel(),
         f"{name}_score": scores.ravel(),
-        f"{name}_rank": np.tile(np.arange(1, k + 1, dtype=np.float32), n),
+        f"{name}_rank": np.tile(np.arange(1, k + 1, dtype=np.float32), n), # Позиции книг в рекоммендациях одного пользователя
     })
     return frame[frame[ITEM_IDX_COL] != PAD_ITEM]
 
@@ -39,16 +41,23 @@ def merge_candidates(users, recommendations: dict[str, tuple[np.ndarray, np.ndar
     масштаба оценок моделей. max_per_user оставляет столько лучших по RRF пар на пользователя.
     """
     users = np.asarray(users, dtype=np.int64)
+
+    # Создаём датафрейм пар рекоммендаций отдельно по рекомендациям каждой модели 
     frames = [_long_format(name, users, items, scores) for name, (items, scores) in recommendations.items()]
+    # Постепенно объединяем таблицы рекоммендаций 
     pool = reduce(lambda a, b: a.merge(b, on=[USER_IDX_COL, ITEM_IDX_COL], how="outer"), frames)
 
+    # Считаем количество моделей, рекомендовавших одну и туже книгу конкретному пользователю 
     rank_cols = [f"{name}_rank" for name in recommendations]
     pool[N_SOURCES_COL] = pool[rank_cols].notna().sum(axis=1).astype(np.int8)
     pool[RRF_COL] = (1.0 / (rrf_k + pool[rank_cols])).sum(axis=1)  # NaN-ранги не дают вклада
 
+    # Сортируем рекомендации внутри каждого пользователя по RRF_score
     pool = pool.sort_values([USER_IDX_COL, RRF_COL], ascending=[True, False], kind="stable")
+
     if max_per_user is not None:
         pool = pool.groupby(USER_IDX_COL, sort=False).head(max_per_user)
+        
     return pool.reset_index(drop=True)
 
 

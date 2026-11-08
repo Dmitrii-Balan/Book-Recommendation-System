@@ -1,64 +1,64 @@
-import os
-import sys
-from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
 import logging
-from dataclasses import dataclass
 
 from src.candidates.registry import build_generators
 from src.candidates.merge import merge_candidates
-from src.data.prepare import PreparedData
+from src.data.catalog import Catalog
 from src.data.matrices import build_interaction_matrix
+
+from src.data.schema import USER_IDX_COL, ITEM_IDX_COL
 
 log = logging.getLogger(__name__)
 
 
-@dataclass
 class Candidates:
     generators : dict
-    pul : pd.DataFrame
+    pool : pd.DataFrame
 
-    @classmethod
-    def generate_candidates(cls, data: PreparedData, target: str, n_recomendations: int = 200, generators: dict = None,
-                            rrf_k: int = 100) -> 'Candidates':
+    def __init__(self, generators: list[str] | None = None, k_per_generator: int = 200, rrf_k: int = 100):
+        '''
+        generators - генераторы кандидатов 
+        k_per_generator - количество книг, рекоммендуемых одним генератором 
+        rrf_k - параметр для ранжирования кандидатов в пуле
+        '''
+        self.generator_names = generators
+        self.k_per_generator = k_per_generator
+        self.rrf_k = rrf_k
 
-        if target not in ['val', 'train']:
-            raise ValueError(f"Значение target должно быть 'val' или 'train', а не {target}")
-        
+    def fit(self, history: pd.DataFrame, catalog: Catalog):
         # Создаём генераторы кандидатов
-        if generators is None:
-            generators = build_generators()
+        self.generators = build_generators(self.generator_names)
+        self.catalog = catalog
 
-        # Узнаём обучаемую и предсказываемую части 
-        history = data.splits.history(target) 
-        target = build_interaction_matrix(data.splits.target(target), data.catalog, weighting="binary")
-
-        # Оставляем только тех пользователей, для которых есть информация в target
-        users = np.flatnonzero(np.diff(target.indptr) > 0)
+        # Строим для них матрицы взаимодействий + бинарную матрицу (понадобится для кандидатов)
+        weightings = {weighting for _, weighting in self.generators.values()} | {"binary"}
+        self.matrices = {w: build_interaction_matrix(history, catalog, weighting=w) for w in weightings}
         
-        # Строим для них матрицы взаимодействий 
-        matrices: dict[str, object] = {}
-        for _, weighting in generators.values():
-            if weighting not in matrices:
-                matrices[weighting] = build_interaction_matrix(history, data.catalog, weighting=weighting)
-
-        # Обучем генераторы и получаем рекоммендации 
-        recs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        # Обучем генераторы
+        for i, (name, (gen, weighting)) in enumerate(self.generators.items(), start=1):
+            log.info("[%d/%d] %s (матрица: %s) — обучение", i, len(self.generators), name, weighting)
+            gen.fit(self.matrices[weighting], self.catalog)
+            
+        return self
+    
+    def get_candidates(self, users, max_per_user: int | None = None):
+        users = np.asarray(users)
+        # Получаем рекомендации от каждого генератора
+        recs = {}
+        for name, (gen, _) in self.generators.items():
+            recs[name] = gen.recommend(users, k=self.k_per_generator)
+        # Объеденяем кандидатов в общий пул
+        return merge_candidates(users, recs, max_per_user=max_per_user, rrf_k=self.rrf_k)
         
-        for i, (name, (gen, weighting)) in enumerate(generators.items(), start=1):
-            
-            log.info("[%d/%d] %s (матрица: %s) — обучение", i, len(generators), name, weighting)
-            gen.fit(matrices[weighting], data.catalog)
 
-            # Получаем рекомендуемые книги и их оценки
-            items, scores = gen.recommend(users, k=n_recomendations)
-            recs[name] = (items, scores)
-            
-        pool = merge_candidates(users, recs, rrf_k=rrf_k)
+def users_with_target(target_matrix) -> np.ndarray:
+    """Индексы пользователей, у которых в цели есть хотя бы одна книга."""
+    return np.flatnonzero(np.diff(target_matrix.indptr) > 0)
 
-        return Candidates(generators, pool)
+
+def make_labels(pool: pd.DataFrame, target_matrix) -> np.ndarray:
+    """1, если пара (пользователь, книга) из пула есть в цели, иначе 0."""
+    hits = target_matrix[pool[USER_IDX_COL].to_numpy(), pool[ITEM_IDX_COL].to_numpy()]
+    return (np.asarray(hits).ravel() > 0).astype(np.int8)
