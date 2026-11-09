@@ -1,0 +1,82 @@
+{
+  "args": {
+    "generators": null,
+    "k_per_generator": 200,
+    "rrf_k": 100,
+    "pool_size": 300,
+    "ks": [
+      5,
+      10,
+      20
+    ],
+    "backend": "auto",
+    "iterations": 500,
+    "examples": 0,
+    "seed": 42,
+    "out_dir": "D:\\ml_materials\\Book-Recommendation-System\\reports\\metrics",
+    "raw_dir": "D:\\ml_materials\\Book-Recommendation-System\\data\\raw",
+    "interactions_file": "interactions.csv",
+    "items_file": "items.csv",
+    "scheme": "global_time",
+    "val_size": 0.1,
+    "test_size": 0.1,
+    "min_rating": 4.0,
+    "min_progress": 80,
+    "min_user_items": 10,
+    "min_item_users": 20,
+    "min_train_items": 3
+  },
+  "data_report": {
+    "config": {
+      "raw_dir": "D:\\ml_materials\\Book-Recommendation-System\\data\\raw",
+      "interactions_file": "interactions.csv",
+      "items_file": "items.csv",
+      "min_rating": 4.0,
+      "min_progress": 80,
+      "drop_below_rating": 1.5,
+      "min_user_items": 10,
+      "min_item_users": 20,
+      "min_train_items": 3,
+      "scheme": "global_time",
+      "val_size": 0.1,
+      "test_size": 0.1
+    },
+    "rows_raw": 1533078,
+    "rows_deduplicated": 1532998,
+    "rows_positive": 572006,
+    "rows_after_user_filter": 247667,
+    "split": {
+      "scheme": "global_time",
+      "val_start": "2019-09-09T00:00:00",
+      "test_start": "2019-11-05T00:00:00",
+      "real_fracs": {
+        "train": 0.799194079146596,
+        "val": 0.10021520832408032,
+        "test": 0.10059071252932365
+      }
+    },
+    "rows": {
+      "train": 113862,
+      "val": 7447,
+      "test": 4501
+    },
+    "dropped_by_catalog": {
+      "val": 17373,
+      "test": 20412
+    },
+    "n_users": 4939,
+    "n_items": 2414,
+    "train_density": 0.009549981187219789
+  },
+  "ranker": {
+    "backend": "catboost",
+    "best_iteration": 118,
+    "train_users": 1044,
+    "holdout_users": 261,
+    "holdout_ndcg@10": 0.12961426102802284,
+    "holdout_rrf_ndcg@10": 0.118317117706248
+  },
+  "val_pool_recall": 0.7048475896334094,
+  "test_pool_recall": 0.6971784047989336,
+  "test_users": 1034
+}
