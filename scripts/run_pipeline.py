@@ -1,8 +1,8 @@
 """
 Оба уровня целиком и метрики итоговых рекомендаций.
 
-    данные -> окно val  (первый уровень на train -> пул -> признаки -> label из val) -> обучение ранкера
-           -> окно test (первый уровень на train+val -> пул -> признаки)             -> метрики на test
+    окно val  (первый уровень на train -> пул -> признаки -> label из val) -> обучение ранкера
+    окно test (первый уровень на train+val -> пул -> признаки)             -> метрики на test
 
 Ранкер видит только окно val; test используется один раз, для итоговой оценки: так цифры честные.
 На одном и том же пуле test сравниваются:
@@ -14,8 +14,6 @@
 Запуск из корня репозитория:
 
     python scripts/run_pipeline.py                                  # все генераторы
-    python scripts/run_pipeline.py --generators als item_knn popular
-    python scripts/run_pipeline.py --max-users 3000                 # быстрый прогон на подвыборке
     python scripts/run_pipeline.py --examples 3                     # показать выдачу для 3 пользователей
 
 Результаты (reports/metrics): pipeline_test.csv (метрики) и pipeline_run.json (параметры и сведения о запуске).
@@ -82,35 +80,59 @@ def parse_args() -> argparse.Namespace:
 
 
 def rankings(window: Window, ranker_scores: np.ndarray) -> dict[str, np.ndarray]:
-    """Способы упорядочить пул окна: имя -> оценка каждой строки пула (чем выше, тем раньше в выдаче)."""
+    """Способы упорядочить пул окна: имя -> оценка каждой строки пула (чем больше, тем раньше в выдаче)."""
+    # Записываем ранжирование первым уровнем и ранкером второго уровня 
     pool = window.pool
     methods = {"ranker": ranker_scores, "rrf": pool["rrf"].to_numpy()}
+    # Записываем ранжирование отдельными генераторами 
     for name in window.candidates.generators:
-        methods[name] = -pool[f"{name}_rank"].to_numpy()          # NaN: генератор книгу не предлагал
+        methods[name] = -pool[f"{name}_rank"].to_numpy()
     methods["oracle"] = window.y.astype(np.float64)
     return methods
 
-
 def show_examples(window: Window, scores: np.ndarray, history: pd.DataFrame, catalog, n: int, k: int,
                   seed: int) -> None:
-    """Выдача ранкера для n случайных пользователей: что читал раньше и что рекомендуем (✓ — прочитал в test)."""
+    """Выдача ранкера для n случайных пользователей: что читал раньше и что рекомендуем"""
     rng = np.random.default_rng(seed)
     users = np.sort(rng.choice(window.users, size=min(n, len(window.users)), replace=False))
     top = topk_from_scores(window.pool, scores, users, k)
+
     meta = catalog.meta
-    titles, authors = meta["title"].to_numpy(), meta["authors"].to_numpy()
-    last_read = history.sort_values(DATE_COL).merge(meta[[ITEM_COL, "title"]], on=ITEM_COL, how="left")
+    titles = meta["title"].to_numpy()
+    authors = meta["authors"].to_numpy()
+
+    # Добавляем к истории названия книг и авторов.
+    last_read = history.sort_values(DATE_COL).merge(
+        meta[[ITEM_COL, "title", "authors"]],
+        on=ITEM_COL,
+        how="left"
+    )
 
     for row, user in enumerate(users):
         user_id = catalog.users.decode(user)
-        read = last_read[last_read[USER_COL] == user_id]["title"].tail(5).tolist()
+        # Последние 5 прочитанных книг.
+        read = last_read[last_read[USER_COL] == user_id].tail(5)
         print(f"\n--- пользователь {user_id}: в test прочитал новых книг: {window.target[user].nnz}")
-        print("  Недавно читал:", "; ".join(read) if read else "—")
+        print("  Недавно читал:")
+        if read.empty:
+            print("    —")
+        else:
+            for i, (_, book) in enumerate(read.iterrows(), start=1):
+                title = book["title"]
+                author = book["authors"]
+                if pd.isna(author):
+                    author = "неизвестен"
+                print(f"    {i}. {title} — {author}")
+        # Рекомендации ранкера.
+        print("  Рекомендации:")
         for rank, item in enumerate(top[row], start=1):
             if item < 0:
                 break
             mark = "✓" if window.target[user, item] > 0 else " "
-            print(f"  {rank:>2}. {mark} {titles[item]} — {authors[item]}")
+            author = authors[item]
+            if pd.isna(author):
+                author = "неизвестен"
+            print(f"    {rank:>2}. {mark} {titles[item]} — {author}")
 
 
 def main() -> None:
@@ -139,6 +161,7 @@ def main() -> None:
     )
 
     # === 2. Окно val: на нём учится ранкер ===
+    # Обучаем генераторы 
     val = build_window("val", splits.history("val"), splits.target("val"), catalog, **window_kw)
     ranker, ranker_info = fit_ranker(val, seed=args.seed, backend=args.backend, iterations=args.iterations,
                                      random_state=args.seed)

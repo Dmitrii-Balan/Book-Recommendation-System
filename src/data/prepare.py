@@ -103,13 +103,10 @@ def prepare_data(cfg: DataConfig | None = None, *, interactions: pd.DataFrame | 
     # Если interactions/items не переданы, они читаются из cfg.raw_dir
     cfg = cfg or DataConfig()
     # Загрузка данных, если не были переданы 
-    if interactions is None or items is None:
-
-        loaded_inter = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file)
-        loaded_items = load_items(Path(cfg.raw_dir) / cfg.items_file)
-
-        interactions = loaded_inter if interactions is None else interactions
-        items = loaded_items if items is None else items
+    if interactions is None:
+        interactions = load_interactions(Path(cfg.raw_dir) / cfg.interactions_file)
+    if items is None:
+        items = load_items(Path(cfg.raw_dir) / cfg.items_file)
 
     report = {"config": asdict(cfg), "rows_raw": int(len(interactions))}
 
